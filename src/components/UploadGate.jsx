@@ -51,7 +51,7 @@ export default function UploadGate({ onUploaded }) {
         return;
       }
 
-      // 1) Call external PDF parser API for PDFs (no fallback parsing)
+      // 1) Call PDF parser API for PDFs with external fallback
       if (isPdf) {
         try {
           const formPdf = new FormData();
@@ -59,29 +59,48 @@ export default function UploadGate({ onUploaded }) {
           const base = (process.env.NEXT_PUBLIC_PDF_API || '').replace(/\/$/, '');
           const url = base ? `${base}/api/parse-pdf` : '/api/parse-pdf';
           console.log('[client] Posting to', url);
-          const resPdf = await fetch(url, { method: 'POST', body: formPdf });
+          let resPdf = await fetch(url, { method: 'POST', body: formPdf });
+          let dataPdf = null;
           if (resPdf.ok) {
-            const dataPdf = await resPdf.json();
+            try { dataPdf = await resPdf.json(); } catch {}
             text = dataPdf?.text || '';
-            if (text) {
-              chunks = simpleChunk(text, 1000, 200);
-              console.log('[client] Parsed (api/parse-pdf) resume text length:', text.length);
-            }
           } else {
-            console.warn('[client] /api/parse-pdf failed with status', resPdf.status);
+            const detail = await resPdf.text().catch(() => '<no-body>');
+            console.warn('[client] parse-pdf failed', resPdf.status, detail);
+          }
+
+          // Fallback to public backend if no text yet and not already using it
+          if (!text) {
+            const externalUrl = 'https://jobtalk-backend.onrender.com/api/parse-pdf';
+            if (url !== externalUrl) {
+              console.log('[client] Retrying parse at', externalUrl);
+              resPdf = await fetch(externalUrl, { method: 'POST', body: formPdf });
+              if (resPdf.ok) {
+                try { dataPdf = await resPdf.json(); } catch {}
+                text = dataPdf?.text || '';
+              } else {
+                const detail2 = await resPdf.text().catch(() => '<no-body>');
+                console.warn('[client] external parse failed', resPdf.status, detail2);
+              }
+            }
+          }
+
+          if (text) {
+            chunks = simpleChunk(text, 1000, 200);
+            console.log('[client] Parsed resume text length:', text.length);
           }
         } catch (e) {
           console.warn('[client] /api/parse-pdf error, will try browser parse:', e);
         }
       }
 
-      // 2) No browser fallback; we strictly rely on external API for PDFs
+      // 2) No browser fallback; we strictly rely on API(s) for PDFs
 
       // 3) No server fallback for non-PDFs; we already blocked above
 
       if (isPdf && !text) {
-        console.error('[client] PDF parsing failed via external API.');
-        throw new Error('Could not parse PDF via external API.');
+        console.error('[client] PDF parsing failed via API(s).');
+        throw new Error('Could not parse PDF via APIs.');
       }
 
       console.log('[client] Final parsed resume text length:', text.length);

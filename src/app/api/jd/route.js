@@ -31,7 +31,7 @@ export async function POST(request) {
         const form = new FormData();
         const blob = new Blob([buffer], { type: 'application/pdf' });
         form.append('file', blob, file.name || 'upload.pdf');
-        const res = await fetch('http://localhost:3000/api/parse-pdf', { method: 'POST', body: form });
+        const res = await fetch('https://jobtalk-backend.onrender.com/api/parse-pdf', { method: 'POST', body: form });
         if (!res.ok) {
           const detail = await res.text().catch(() => '<no-body>');
           return NextResponse.json({ error: 'PDF parse API error', detail }, { status: res.status });
